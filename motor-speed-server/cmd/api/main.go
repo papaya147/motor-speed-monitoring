@@ -118,7 +118,12 @@ func render(w http.ResponseWriter, t string) {
 		BrokerUrl string
 	}
 
-	data.BrokerUrl = fmt.Sprintf("http://%s:%s", os.Getenv("SERVER_IP"), "8080")
+	serverIP := os.Getenv("SERVER_IP")
+	if serverIP == "" {
+		serverIP = "localhost"
+	}
+
+	data.BrokerUrl = fmt.Sprintf("http://%s:%s", serverIP, "8080")
 
 	if err := tmpl.Execute(w, data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
