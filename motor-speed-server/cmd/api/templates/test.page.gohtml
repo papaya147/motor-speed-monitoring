@@ -1,0 +1,151 @@
+{{template "base" .}}
+
+{{define "content" }}
+    <div class="container">
+        <div class="row" style="margin-top: 25px;">
+            <div class="col d-flex justify-content-center">
+                <input class="calendar" type="text" id="startCal" placeholder="select start time">
+            </div>
+            <div class="col d-flex justify-content-center">
+                <input class="calendar" type="text" id="endCal" placeholder="select end time">
+            </div>
+            <div class="col d-flex justify-content-center">
+                <a id="fetchBtn" class="btn btn-outline-secondary" href="javascript:void(0);">Fetch Data</a>
+            </div>
+        </div>
+        <canvas id="graph"></canvas>
+    </div>
+{{end}}
+
+{{define "js"}}
+    <script>
+        const getQueryParamValue = (name) => {
+            const urlParams = new URLSearchParams(window.location.search)
+            return urlParams.get(name)
+        }
+
+        const setQueryParamValue = (name, value) => {
+            const urlParams = new URLSearchParams(window.location.search);
+            urlParams.set(name, value);
+            window.history.replaceState({}, '', `${window.location.pathname}?${urlParams}`);
+        }
+
+        const currentTimeFormatted = moment.utc().format("YYYY-MM-DDTHH:mm:ss.SSS[Z]");
+        const twentyFourHoursAgo = moment.utc().subtract(24, 'hours').format("YYYY-MM-DDTHH:mm:ss.SSS[Z]");
+        const twentyFourHoursLater = moment.utc().add(24, 'hours').format("YYYY-MM-DDTHH:mm:ss.SSS[Z]");
+        let start = getQueryParamValue("start") || twentyFourHoursAgo
+        let end = getQueryParamValue("end") || twentyFourHoursLater
+
+        let fetchBtn = document.getElementById("fetchBtn");
+        let lineChart;
+
+        const startCal = flatpickr("#startCal", {
+            enableTime: true,
+            dateFormat: "Y-m-dTH:i:S",
+            defaultDate: Date.parse(start)
+        });
+
+        const endCal = flatpickr("#endCal", {
+            enableTime: true,
+            dateFormat: "Y-m-dTH:i:S",
+            defaultDate: Date.parse(end)
+        });
+
+        document.addEventListener("DOMContentLoaded", async () => {
+            let data = await fetchData(start, end)
+            let timestamps = [], speeds = []
+
+            if (data.data){
+                timestamps = data.data.map(entry => moment(entry.time).format("HH:mm:ss"))
+                speeds = data.data.map(entry => entry.motor_speed)
+            }
+
+            var ctx = document.getElementById("graph").getContext("2d");
+            lineChart = new Chart(ctx, {
+                type: "line",
+                data: {
+                    labels: timestamps,
+                    datasets: [
+                        {
+                            label: "Motor Speed",
+                            data: speeds,
+                            borderColor: "rgba(75, 192, 192, 1)",
+                            backgroundColor: "rgba(0, 0, 0, 0.25)",
+                            fill: false,
+                            cubicInterpolationMode: "monotone",
+                            pointRadius: 5
+                        }
+                    ]
+                },
+                options: {
+                    scales: {
+                        x: {
+                            beginAtZero: false
+                        },
+                        y: {
+                            beginAtZero: false
+                        }
+                    }
+                }
+            });
+            setInterval(async () => {
+                refreshData()
+            }, 3 * 1000)
+        });
+
+        fetchBtn.addEventListener("click", () => {
+            start = moment(startCal.selectedDates[0]).utc().format("YYYY-MM-DDTHH:mm:ss.SSS[Z]")
+            end = moment(endCal.selectedDates[0]).utc().format("YYYY-MM-DDTHH:mm:ss.SSS[Z]")
+
+            setQueryParamValue("start", start)
+            setQueryParamValue("end", end)
+
+            refreshData()
+        })
+
+        const refreshData = async () => {
+            const data = await fetchData(start, end)
+            let timestamps, speeds
+
+            if (data.data){
+                timestamps = data.data.map(entry => moment(entry.time).format("HH:mm:ss"))
+                speeds = data.data.map(entry => entry.motor_speed)
+            } else {
+                timestamps = []
+                speeds = []
+            }
+
+            lineChart.data.labels = timestamps
+            lineChart.data.datasets[0].data = speeds
+
+            lineChart.update()
+        }
+
+        const fetchData = async (start, end) => {
+            const payload = {
+                start,
+                end
+            }
+
+            const headers = new Headers()
+            headers.append("Content-Type", "application/json")
+
+            const body = {
+                method: "POST",
+                body: JSON.stringify(payload),
+                headers: headers
+            }
+
+            const data = await fetch({{print .BrokerUrl "/"}}, body)
+            .then((response) => response.json())
+            .then((data) => {
+                return data
+            })
+            .catch((error) => {
+                return []
+            })
+
+            return data
+        }
+    </script>
+{{end}}
